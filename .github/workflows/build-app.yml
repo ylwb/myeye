@@ -1,0 +1,65 @@
+name: build-app
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      app_dir:
+        description: 'Flutter project dir (default: auto-detect pubspec.yaml)'
+        required: false
+        default: ''
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Detect Flutter project dir
+        id: detect
+        run: |
+          DIR="${{ inputs.app_dir }}"
+          if [ -z "$DIR" ]; then
+            for d in "" app kelivo; do
+              if [ -f "${d:+$d/}pubspec.yaml" ]; then DIR="${d:-.}"; break; fi
+            done
+          fi
+          if [ -z "$DIR" ] || [ ! -f "$DIR/pubspec.yaml" ]; then
+            echo "::error::No pubspec.yaml found (looked in ./, app/, kelivo/). Set app_dir input."
+            exit 1
+          fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Detected project: $DIR"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+
+      - name: Android deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y python3 curl tar unzip || true
+
+      - name: Flutter pub get
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: flutter pub get
+
+      - name: Build APK (release)
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kelivo-apk
+          path: ${{ steps.detect.outputs.dir }}/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error

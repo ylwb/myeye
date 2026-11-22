@@ -1,0 +1,45 @@
+name: acp-integration
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  handshake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pi + pi-acp
+        run: |
+          npm install -g @earendil-works/pi-coding-agent
+          npm install
+      - name: ACP handshake (no model key required)
+        run: node acp-handshake.js
+
+  prompt:
+    # Requires a pi model provider configured via repo secrets.
+    # Skip when no key is provided so the public repo CI stays green.
+    if: ${{ secrets.MODEL_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pi + pi-acp
+        run: |
+          npm install -g @earendil-works/pi-coding-agent
+          npm install
+      - name: ACP prompt round-trip
+        env:
+          # Map your provider key into whatever env var pi's provider reads.
+          # Example for an OpenAI-compatible provider:
+          #   OPENAI_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          #   OPENAI_BASE_URL: ${{ secrets.MODEL_BASE_URL }}
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          MODEL_BASE_URL: ${{ secrets.MODEL_BASE_URL }}
+        run: node acp-client-piacp.js
