@@ -31,6 +31,11 @@ jobs:
 
   apk:
     runs-on: ubuntu-latest
+    env:
+      # GHA public IPs frequently get 429 from Maven Central; retry tentatives.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.internal.repository.max.tentatives=5
+        -Dorg.gradle.internal.repository.initial.backoff=1000
     steps:
       - uses: actions/checkout@v4
         with:
