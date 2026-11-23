@@ -2987,7 +2987,9 @@ class ChatActions {
   ) async {
     final manager = acpManager;
     if (manager == null) return;
-    await manager.ensureSession(cwd: ctx.assistantMessage.conversationId);
+    // TODO(kelivo-acp): resolve the workspace directory from the assistant's
+    // defaultWorkspaceId / WorkspaceBinding instead of the process cwd.
+    await manager.ensureSession();
     final text = _lastUserText(ctx.apiMessages);
     manager.onEvent = (event) {
       for (final chunk in manager.converter.convert(event)) {
