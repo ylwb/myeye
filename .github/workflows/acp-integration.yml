@@ -22,8 +22,8 @@ jobs:
 
   prompt:
     # Requires a pi model provider configured via repo secrets.
-    # Skip when no key is provided so the public repo CI stays green.
-    if: ${{ secrets.MODEL_API_KEY != '' }}
+    # The test script skips itself when MODEL_API_KEY is absent, so the
+    # public repo CI stays green without a key.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
