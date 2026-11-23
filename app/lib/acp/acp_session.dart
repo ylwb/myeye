@@ -12,13 +12,13 @@ import 'acp_to_chunk.dart';
 /// Manages a single ACP agent subprocess and session.
 class AcpSessionManager {
   AcpSessionManager({
-    List<String> agentCommand = const ['pi-acp'],
+    this.agentCommand = const ['pi-acp'],
     this.useProot = false,
     this.rootfs,
     this.workspaceDir = '/workspace',
-  }) : _agentCommand = agentCommand;
+  });
 
-  final List<String> _agentCommand;
+  final List<String> agentCommand;
   final bool useProot;
   final String? rootfs;
   final String workspaceDir;
@@ -35,7 +35,7 @@ class AcpSessionManager {
   Future<void> ensureSession({String? cwd}) async {
     if (_started && client?.isRunning == true) return;
     final config = AcpSpawnConfig(
-      agentCommand: _agentCommand,
+      agentCommand: agentCommand,
       useProot: useProot,
       rootfs: rootfs,
       workspaceDir: workspaceDir,
