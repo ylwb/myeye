@@ -47,3 +47,31 @@ jobs:
           MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
           MODEL_BASE_URL: ${{ secrets.MODEL_BASE_URL }}
         run: node acp-client-piacp.js
+
+  smoke:
+    # Dart runtime smoke of the kelivo ACP bridge (AcpSessionManager).
+    # Handshake needs no key; prompt round-trip only when MODEL_API_KEY is set.
+    runs-on: ubuntu-latest
+    env:
+      PI_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install pi + pi-acp
+        run: |
+          npm install -g @earendil-works/pi-coding-agent
+          npm install
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Dart ACP smoke (handshake; prompt if MODEL_API_KEY)
+        working-directory: app
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          MODEL_BASE_URL: ${{ secrets.MODEL_BASE_URL }}
+        run: |
+          flutter pub get
+          dart run tool/acp_smoke.dart
