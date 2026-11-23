@@ -1,0 +1,611 @@
+ import Flutter
+ import flutter_inappwebview_ios
+ import UIKit
+ import AuthenticationServices
+ import UserNotifications
+ import SwiftUI
+ import Translation
+ import UniformTypeIdentifiers
+ import Photos
+
+
+@main
+@objc class AppDelegate: FlutterAppDelegate {
+   private let fileSaveHandler = NativeFileSaveHandler()
+   private let backgroundGenerationHandler = MobileBackgroundHandler()
+   private let oauthHandler = IosOAuthHandler()
+   private let deviceLocalToolsHandler = DeviceLocalToolsHandler()
+   private let iosTranslationHandler = IosTranslationHandler()
+   private let scheduledTaskNotifications = ScheduledTaskNotifications()
+   private let incomingShareHandler = IosIncomingShareHandler()
+   private let browserViewportInsets = BrowserViewportInsetsBridge()
+   private let browserScroll = BrowserScrollBridge()
+   // The presenter is only constructed on iOS 26 and later.
+   private var iosSelectionMenuHandler: AnyObject?
+
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    applyBackupPolicy()
+    GeneratedPluginRegistrant.register(with: self)
+    if let registrar = registrar(forPlugin: "BrowserGlass") {
+      registrar.register(
+        BrowserGlassViewFactory(messenger: registrar.messenger()),
+        withId: "app.browser_glass"
+      )
+    }
+    // FlutterAppDelegate forwards foreground presentation and cold/warm taps
+    // to flutter_local_notifications. Assigning a delegate requests no access.
+    UNUserNotificationCenter.current().delegate = self
+    if let controller = window?.rootViewController as? FlutterViewController {
+      let selectionMenuChannel = FlutterMethodChannel(name: "app.ios_selection_menu", binaryMessenger: controller.binaryMessenger)
+      if #available(iOS 26.0, *) {
+        let handler = IosSelectionMenuHandler(view: controller.view, channel: selectionMenuChannel)
+        iosSelectionMenuHandler = handler
+        selectionMenuChannel.setMethodCallHandler { [weak handler] call, result in
+          guard let handler else { result(false); return }
+          handler.handle(call, result: result)
+        }
+      } else {
+        selectionMenuChannel.setMethodCallHandler { call, result in
+          result(call.method == "isAvailable" ? false : FlutterMethodNotImplemented)
+        }
+      }
+      browserViewportInsets.register(messenger: controller.binaryMessenger, window: window) {
+        ($0 as? InAppWebView)?.browserNativeViewId
+      }
+      browserScroll.register(messenger: controller.binaryMessenger, window: window) {
+        ($0 as? InAppWebView)?.browserNativeViewId
+      }
+      incomingShareHandler.register(messenger: controller.binaryMessenger)
+      let clipboardChannel = FlutterMethodChannel(name: "app.clipboard", binaryMessenger: controller.binaryMessenger)
+      clipboardChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
+        if call.method == "getClipboardImages" {
+          var paths: [String] = []
+          if let image = UIPasteboard.general.image {
+            if let data = image.pngData() ?? image.jpegData(compressionQuality: 0.95) {
+              let tmp = NSTemporaryDirectory()
+              let filename = "pasted_\(Int(Date().timeIntervalSince1970 * 1000)).png"
+              let url = URL(fileURLWithPath: tmp).appendingPathComponent(filename)
+              do {
+                try data.write(to: url)
+                paths.append(url.path)
+              } catch {
+                // ignore write error
+              }
+            }
+          }
+          result(paths)
+        } else {
+          result(FlutterMethodNotImplemented)
+        }
+      }
+
+      let fileSaveChannel = FlutterMethodChannel(name: "app.file_save", binaryMessenger: controller.binaryMessenger)
+      fileSaveHandler.presentingViewController = controller
+      fileSaveHandler.channel = fileSaveChannel
+      fileSaveChannel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
+        guard ["saveFileFromPath", "saveImageToGallery", "cancelSave"].contains(call.method) else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.fileSaveHandler.handle(call: call, result: result)
+      }
+
+      backgroundGenerationHandler.configure(messenger: controller.binaryMessenger)
+      scheduledTaskNotifications.configure(messenger: controller.binaryMessenger)
+
+      let oauthChannel = FlutterMethodChannel(name: "app.oauth", binaryMessenger: controller.binaryMessenger)
+      oauthHandler.presentationAnchor = window
+      oauthChannel.setMethodCallHandler { [weak self] call, result in
+        self?.oauthHandler.handle(call: call, result: result)
+      }
+
+      let iosTranslationChannel = FlutterMethodChannel(name: "app.ios_translation", binaryMessenger: controller.binaryMessenger)
+      iosTranslationHandler.presentingViewController = controller
+      iosTranslationChannel.setMethodCallHandler { [weak self] call, result in
+        self?.iosTranslationHandler.handle(call: call, result: result)
+      }
+ 
+       let deviceToolsChannel = FlutterMethodChannel(name: "app.device_tools", binaryMessenger: controller.binaryMessenger)
+       deviceToolsChannel.setMethodCallHandler { [weak self] call, result in
+         self?.deviceLocalToolsHandler.handle(call: call, result: result)
+       }
+
+      WorkspacePlugin.register(messenger: controller.binaryMessenger, presenter: controller)
+
+      // Free space on the volume holding the app's data. Uses the "important
+      // usage" capacity, which is what iOS will actually free up for data the
+      // app cannot regenerate -- the plain available-capacity value understates
+      // it and would make the app skip copies it could have made.
+      let storageChannel = FlutterMethodChannel(name: "app.device_storage", binaryMessenger: controller.binaryMessenger)
+      storageChannel.setMethodCallHandler { call, result in
+        switch call.method {
+        case "freeBytes":
+          guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            result(nil)
+            return
+          }
+          do {
+            let values = try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            if let capacity = values.volumeAvailableCapacityForImportantUsage {
+              result(NSNumber(value: capacity))
+              return
+            }
+          } catch {
+            // Fall through: the caller treats a missing answer as "unknown".
+          }
+          result(nil)
+
+        // Keep standalone local-copy directories excluded as well as the app
+        // roots protected by AppBackupPolicy.
+        case "excludeFromBackup":
+          guard
+            let arguments = call.arguments as? [String: Any],
+            let path = arguments["path"] as? String,
+            !path.isEmpty
+          else {
+            result(FlutterError(code: "invalid_args", message: "Missing path.", details: nil))
+            return
+          }
+          var url = URL(fileURLWithPath: path)
+          var values = URLResourceValues()
+          values.isExcludedFromBackup = true
+          do {
+            try url.setResourceValues(values)
+            result(true)
+          } catch {
+            result(FlutterError(code: "exclude_failed", message: error.localizedDescription, details: nil))
+          }
+
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func applicationDidBecomeActive(_ application: UIApplication) {
+    // Reapply for existing installs and directories replaced while suspended.
+    applyBackupPolicy()
+    super.applicationDidBecomeActive(application)
+  }
+
+  private func applyBackupPolicy() {
+    do {
+      try AppBackupPolicy.apply(in: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
+    } catch {
+      // Metadata errors must not stop users from accessing or exporting data.
+      // The next foreground activation retries the exclusion.
+      NSLog("[AppBackupPolicy] Could not exclude app data from backup: %@", String(describing: error))
+    }
+  }
+
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    // In the foreground the shared scheduler can execute the due task. Avoid
+    // displaying its fallback reminder immediately before its result arrives.
+    if notification.request.identifier.hasPrefix("scheduled-task:"),
+       notification.request.content.userInfo["scheduledPrepared"] as? Bool == false {
+      completionHandler([])
+      return
+    }
+    super.userNotificationCenter(center, willPresent: notification, withCompletionHandler: completionHandler)
+  }
+
+  override func applicationWillTerminate(_ application: UIApplication) {
+    browserViewportInsets.dispose()
+    browserScroll.dispose()
+    backgroundGenerationHandler.prepareForTermination()
+    super.applicationWillTerminate(application)
+  }
+
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if backgroundGenerationHandler.receive(url) { return true }
+    if incomingShareHandler.receive(url) { return true }
+    if url.scheme == "kelivo" && url.host == "oauth-return" {
+      return true
+    }
+    return super.application(app, open: url, options: options)
+  }
+}
+
+private final class IosTranslationHandler {
+  weak var presentingViewController: UIViewController?
+  private var hostingController: UIViewController?
+
+  func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "isAvailable":
+      if #available(iOS 17.4, *) {
+        result(true)
+      } else {
+        result(false)
+      }
+    case "present":
+      guard #available(iOS 17.4, *) else {
+        result(false)
+        return
+      }
+      let arguments = call.arguments as? [String: Any]
+      guard
+        let text = arguments?["text"] as? String,
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        let anchorX = arguments?["anchorX"] as? Double,
+        let anchorY = arguments?["anchorY"] as? Double,
+        let presenter = presentingViewController,
+        presenter.viewIfLoaded?.window != nil
+      else {
+        result(false)
+        return
+      }
+      present(
+        text: text,
+        anchor: CGPoint(x: anchorX, y: anchorY),
+        in: presenter
+      )
+      result(true)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  @available(iOS 17.4, *)
+  private func present(text: String, anchor: CGPoint, in presenter: UIViewController) {
+    removeHostingController()
+
+    let bounds = presenter.view.bounds
+    let point = CGPoint(
+      x: min(max(anchor.x, bounds.minX + 1), bounds.maxX - 1),
+      y: min(max(anchor.y, bounds.minY + 1), bounds.maxY - 1)
+    )
+    let hostingController = UIHostingController(
+      rootView: NativeTranslationPresenter(text: text) { [weak self] in
+        self?.removeHostingController()
+      }
+    )
+    hostingController.view.backgroundColor = .clear
+    hostingController.view.frame = CGRect(
+      x: point.x - 1,
+      y: point.y - 1,
+      width: 2,
+      height: 2
+    )
+    presenter.addChild(hostingController)
+    presenter.view.addSubview(hostingController.view)
+    hostingController.didMove(toParent: presenter)
+    self.hostingController = hostingController
+  }
+
+  private func removeHostingController() {
+    guard let hostingController else { return }
+    hostingController.willMove(toParent: nil)
+    hostingController.view.removeFromSuperview()
+    hostingController.removeFromParent()
+    self.hostingController = nil
+  }
+}
+
+@available(iOS 17.4, *)
+private struct NativeTranslationPresenter: View {
+  let text: String
+  let onDismiss: () -> Void
+  @State private var isPresented = false
+
+  var body: some View {
+    Color.clear
+      .translationPresentation(isPresented: $isPresented, text: text)
+      .onAppear {
+        DispatchQueue.main.async {
+          isPresented = true
+        }
+      }
+      .onChange(of: isPresented) { visible in
+        if !visible {
+          onDismiss()
+        }
+      }
+  }
+}
+
+private final class IosOAuthHandler: NSObject, ASWebAuthenticationPresentationContextProviding {
+  weak var presentationAnchor: UIWindow?
+  private var session: ASWebAuthenticationSession?
+  private var sessionId: String?
+
+  func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "authenticate":
+      guard session == nil else {
+        result(FlutterError(code: "authorization_in_progress", message: "An authorization session is already in progress.", details: nil))
+        return
+      }
+      let arguments = call.arguments as? [String: Any]
+      guard
+        let urlString = arguments?["url"] as? String,
+        let url = URL(string: urlString),
+        let callbackScheme = arguments?["callbackScheme"] as? String,
+        !callbackScheme.isEmpty,
+        let requestId = arguments?["sessionId"] as? String,
+        !requestId.isEmpty
+      else {
+        result(FlutterError(code: "invalid_arguments", message: "A valid authorization URL and callback scheme are required.", details: nil))
+        return
+      }
+
+      let authenticationSession = ASWebAuthenticationSession(
+        url: url,
+        callbackURLScheme: callbackScheme
+      ) { [weak self] callbackURL, error in
+        if self?.sessionId == requestId {
+          self?.session = nil
+          self?.sessionId = nil
+        }
+        if let callbackURL {
+          result(callbackURL.absoluteString)
+          return
+        }
+        let nsError = error as NSError?
+        let cancelled = nsError?.domain == ASWebAuthenticationSessionErrorDomain && nsError?.code == 1
+        result(
+          FlutterError(
+            code: cancelled ? "authorization_cancelled" : "authorization_failed",
+            message: error?.localizedDescription ?? "Authorization did not return a callback URL.",
+            details: nil
+          )
+        )
+      }
+      authenticationSession.presentationContextProvider = self
+      authenticationSession.prefersEphemeralWebBrowserSession = false
+      session = authenticationSession
+      sessionId = requestId
+      if !authenticationSession.start() {
+        session = nil
+        sessionId = nil
+        result(FlutterError(code: "authorization_failed", message: "Could not start the authorization session.", details: nil))
+      }
+    case "cancel":
+      let arguments = call.arguments as? [String: Any]
+      if let requestId = arguments?["sessionId"] as? String, requestId == sessionId {
+        let previous = session
+        session = nil
+        sessionId = nil
+        previous?.cancel()
+      }
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    if let presentationAnchor {
+      return presentationAnchor
+    }
+    for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+      if let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first {
+        return window
+      }
+    }
+    return UIWindow()
+  }
+}
+
+private final class NativeFileSaveHandler: NSObject, UIDocumentPickerDelegate {
+  weak var presentingViewController: UIViewController?
+  var channel: FlutterMethodChannel?
+  private var progressId: Int?
+  private var cancellation: Progress?
+  private weak var activePicker: UIDocumentPickerViewController?
+  private var pendingResult: FlutterResult?
+  private var externalBackupSource: URL?
+  private var initialDirectory: URL?
+  private let backupQueue = DispatchQueue(label: "psyche.kelivo.backup-export", qos: .userInitiated)
+  private static let backupDirectoryKey = "backup_export_directory_bookmark"
+
+  func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "cancelSave" {
+      if let id = call.arguments as? Int, id == progressId {
+        cancellation?.cancel()
+        if let picker = activePicker {
+          activePicker = nil
+          picker.dismiss(animated: true) { [weak self] in
+            if self?.progressId == id { self?.finish(with: false) }
+          }
+        }
+      }
+      result(nil)
+      return
+    }
+    if pendingResult != nil {
+      result(FlutterError(code: "busy", message: "Another save operation is already in progress.", details: nil))
+      return
+    }
+
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(code: "invalid_args", message: "Arguments must be a map.", details: nil))
+      return
+    }
+
+    let rawSourcePath = (args["sourcePath"] as? String) ?? ""
+    guard !rawSourcePath.isEmpty else {
+      result(FlutterError(code: "invalid_args", message: "Missing sourcePath.", details: nil))
+      return
+    }
+
+    let sourceURL = URL(fileURLWithPath: rawSourcePath)
+    guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+      result(FlutterError(code: "not_found", message: "Source file does not exist.", details: nil))
+      return
+    }
+
+    if call.method == "saveImageToGallery" {
+      saveImageToGallery(at: sourceURL, result: result)
+      return
+    }
+
+    guard let presenter = topViewController(from: presentingViewController) else {
+      result(FlutterError(code: "unavailable", message: "Unable to present document picker.", details: nil))
+      return
+    }
+
+    pendingResult = result
+    progressId = args["progressId"] as? Int
+    cancellation = progressId == nil ? nil : Progress(totalUnitCount: 1)
+    externalBackupSource = args["requireOutsideAppContainer"] as? Bool == true ? sourceURL : nil
+
+    backupQueue.async { [weak self] in
+      guard let self else { return }
+      var preferredDirectory: URL?
+      if self.externalBackupSource != nil,
+         let data = UserDefaults.standard.data(forKey: Self.backupDirectoryKey) {
+        var stale = false
+        if let directory = try? URL(resolvingBookmarkData: data, options: [.withoutUI],
+                                    relativeTo: nil, bookmarkDataIsStale: &stale),
+           !BackupExportDestination.isInsideAppContainer(directory),
+           directory.startAccessingSecurityScopedResource() {
+          preferredDirectory = directory
+        }
+      }
+
+      let directory = preferredDirectory
+      DispatchQueue.main.async {
+        self.initialDirectory = directory
+        if self.cancellation?.isCancelled == true {
+          self.finish(with: false)
+          return
+        }
+        let picker: UIDocumentPickerViewController
+        if self.externalBackupSource != nil {
+          picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+          picker.allowsMultipleSelection = false
+          picker.directoryURL = directory
+          picker.title = args["dialogTitle"] as? String
+        } else if #available(iOS 14.0, *) {
+          picker = UIDocumentPickerViewController(forExporting: [sourceURL], asCopy: true)
+        } else {
+          picker = UIDocumentPickerViewController(url: sourceURL, in: .exportToService)
+        }
+
+        self.activePicker = picker
+        picker.delegate = self
+        picker.modalPresentationStyle = .formSheet
+        if let popover = picker.popoverPresentationController {
+          popover.sourceView = presenter.view
+          popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+          popover.permittedArrowDirections = []
+        }
+
+        presenter.present(picker, animated: true)
+      }
+    }
+  }
+
+  private func saveImageToGallery(at source: URL, result: @escaping FlutterResult) {
+    PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+      guard status == .authorized else {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "photo_permission_denied", message: "Permission to add photos was denied.", details: nil))
+        }
+        return
+      }
+
+      PHPhotoLibrary.shared().performChanges({
+        PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: source, options: nil)
+      }) { success, error in
+        // Saving only needs add access. Reading the asset back would fail when
+        // Photos read access is denied, even though the original was saved.
+        DispatchQueue.main.async {
+          if success {
+            result(true)
+          } else {
+            result(FlutterError(code: "save_failed", message: error?.localizedDescription ?? "Unable to save image to Photos.", details: nil))
+          }
+        }
+      }
+    }
+  }
+
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    guard controller === activePicker else { return }
+    finish(with: false)
+  }
+
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    guard controller === activePicker else { return }
+    activePicker = nil
+    if let source = externalBackupSource, let directory = urls.first {
+      let token = cancellation
+      let id = progressId
+      backupQueue.async {
+        let accessed = directory.startAccessingSecurityScopedResource()
+        defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
+        do {
+          try BackupExportDestination.copy(source: source, to: directory, cancellation: token) { written, total in
+            guard let id else { return }
+            DispatchQueue.main.async {
+              if self.progressId == id {
+                self.channel?.invokeMethod("saveProgress", arguments: [Int64(id), written, total])
+              }
+            }
+          }
+          if let bookmark = try? directory.bookmarkData(options: [.minimalBookmark],
+                                                        includingResourceValuesForKeys: nil, relativeTo: nil) {
+            UserDefaults.standard.set(bookmark, forKey: Self.backupDirectoryKey)
+          }
+          DispatchQueue.main.async { self.finish(with: true) }
+        } catch {
+          if (error as? CocoaError)?.code == .userCancelled {
+            DispatchQueue.main.async { self.finish(with: false) }
+            return
+          }
+          let code = error is BackupExportDestination.ExportError
+            ? "backup_destination_inside_app" : "save_failed"
+          DispatchQueue.main.async {
+            self.finish(with: FlutterError(code: code, message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+      return
+    }
+    finish(with: !urls.isEmpty)
+  }
+
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+    documentPicker(controller, didPickDocumentsAt: [url])
+  }
+
+  private func finish(with value: Any) {
+    let result = pendingResult
+    pendingResult = nil
+    externalBackupSource = nil
+    activePicker = nil
+    progressId = nil
+    cancellation = nil
+    initialDirectory?.stopAccessingSecurityScopedResource()
+    initialDirectory = nil
+    result?(value)
+  }
+
+  private func topViewController(from controller: UIViewController?) -> UIViewController? {
+    if let navigation = controller as? UINavigationController {
+      return topViewController(from: navigation.visibleViewController)
+    }
+    if let tab = controller as? UITabBarController {
+      return topViewController(from: tab.selectedViewController)
+    }
+    if let presented = controller?.presentedViewController {
+      return topViewController(from: presented)
+    }
+    return controller
+  }
+}

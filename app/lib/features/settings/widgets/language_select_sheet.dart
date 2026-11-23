@@ -1,0 +1,351 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter_svg/flutter_svg.dart';
+import '../../../icons/lucide_adapter.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../../shared/widgets/ios_tactile.dart';
+import '../../../core/services/haptics.dart';
+import '../../../desktop/desktop_context_menu.dart';
+import '../../../desktop/menu_anchor.dart';
+import 'package:Kelivo/theme/app_font_weights.dart';
+import 'package:Kelivo/theme/app_semantic_colors.dart';
+import '../../../shared/widgets/section_card.dart';
+
+class LanguageOption {
+  final String code;
+  final String displayName;
+  final String displayNameZh;
+  final String flag;
+  final String? flagAsset;
+
+  const LanguageOption({
+    required this.code,
+    required this.displayName,
+    required this.displayNameZh,
+    required this.flag,
+    this.flagAsset,
+  });
+}
+
+const List<LanguageOption> supportedLanguages = [
+  LanguageOption(
+    code: 'zh-CN',
+    displayName: 'Simplified Chinese',
+    displayNameZh: '简体中文',
+    flag: '🇨🇳',
+  ),
+  LanguageOption(
+    code: 'en',
+    displayName: 'English',
+    displayNameZh: 'English',
+    flag: '🇺🇸',
+  ),
+  LanguageOption(
+    code: 'zh-TW',
+    displayName: 'Traditional Chinese',
+    displayNameZh: '繁體中文',
+    flag: '🇨🇳',
+  ),
+  LanguageOption(
+    code: 'ja',
+    displayName: 'Japanese',
+    displayNameZh: '日本語',
+    flag: '🇯🇵',
+  ),
+  LanguageOption(
+    code: 'ko',
+    displayName: 'Korean',
+    displayNameZh: '한국어',
+    flag: '🇰🇷',
+  ),
+  LanguageOption(
+    code: 'fr',
+    displayName: 'French',
+    displayNameZh: 'Français',
+    flag: '🇫🇷',
+  ),
+  LanguageOption(
+    code: 'de',
+    displayName: 'German',
+    displayNameZh: 'Deutsch',
+    flag: '🇩🇪',
+  ),
+  LanguageOption(
+    code: 'it',
+    displayName: 'Italian',
+    displayNameZh: 'Italiano',
+    flag: '🇮🇹',
+  ),
+  LanguageOption(
+    code: 'es',
+    displayName: 'Spanish',
+    displayNameZh: 'Español',
+    flag: '🇪🇸',
+  ),
+  // LanguageOption(code: 'pt', displayName: 'Portuguese', displayNameZh: 'Português', flag: '🇵🇹'),
+  LanguageOption(
+    code: 'ru',
+    displayName: 'Russian',
+    displayNameZh: 'Русский',
+    flag: '🇷🇺',
+  ),
+  LanguageOption(
+    code: 'tr',
+    displayName: 'Turkish',
+    displayNameZh: 'Türkçe',
+    flag: '🇹🇷',
+  ),
+  LanguageOption(
+    code: 'bn',
+    displayName: 'Bangla',
+    displayNameZh: 'বাংলা',
+    flag: '🇧🇩',
+    flagAsset: 'assets/icons/bangladesh-flag.svg',
+  ),
+  // LanguageOption(code: 'ar', displayName: 'Arabic', displayNameZh: 'العربية', flag: '🇸🇦'),
+  // LanguageOption(code: 'hi', displayName: 'Hindi', displayNameZh: 'हिन्दी', flag: '🇮🇳'),
+  // LanguageOption(code: 'th', displayName: 'Thai', displayNameZh: 'ไทย', flag: '🇹🇭'),
+  // LanguageOption(code: 'vi', displayName: 'Vietnamese', displayNameZh: 'Tiếng Việt', flag: '🇻🇳'),
+];
+
+Widget buildLanguageFlag(
+  LanguageOption language, {
+  required double size,
+  double? lineHeight,
+}) {
+  final asset = language.flagAsset;
+  if (asset != null) {
+    return SvgPicture.asset(asset, width: size, height: size);
+  }
+  return Text(
+    language.flag,
+    style: TextStyle(fontSize: size, height: lineHeight),
+  );
+}
+
+String languageDisplayName(AppLocalizations l10n, String languageCode) {
+  switch (languageCode) {
+    case 'zh-CN':
+      return l10n.languageDisplaySimplifiedChinese;
+    case 'en':
+      return l10n.languageDisplayEnglish;
+    case 'zh-TW':
+      return l10n.languageDisplayTraditionalChinese;
+    case 'ja':
+      return l10n.languageDisplayJapanese;
+    case 'ko':
+      return l10n.languageDisplayKorean;
+    case 'ru':
+      return l10n.languageDisplayRussian;
+    case 'tr':
+      return l10n.languageDisplayTurkish;
+    case 'bn':
+      return l10n.languageDisplayBangla;
+    case 'fr':
+      return l10n.languageDisplayFrench;
+    case 'de':
+      return l10n.languageDisplayGerman;
+    case 'it':
+      return l10n.languageDisplayItalian;
+    case 'es':
+      return l10n.languageDisplaySpanish;
+    default:
+      return languageCode;
+  }
+}
+
+Future<LanguageOption?> showLanguageSelector(BuildContext context) async {
+  final isDesktop =
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux;
+  if (!isDesktop) {
+    return showModalBottomSheet<LanguageOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.overlaySurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => const _LanguageSelectSheet(),
+    );
+  }
+
+  // Desktop anchored menu
+  final l10n = AppLocalizations.of(context)!;
+  LanguageOption? selected;
+  final items = [
+    ...supportedLanguages.map((lang) {
+      final name = languageDisplayName(l10n, lang.code);
+      return DesktopContextMenuItem(
+        svgAsset: lang.flagAsset,
+        tintSvg: false,
+        label: lang.flagAsset == null ? '${lang.flag} $name' : name,
+        onTap: () => selected = lang,
+      );
+    }),
+    DesktopContextMenuItem(
+      icon: Lucide.X,
+      label: l10n.languageSelectSheetClearButton,
+      onTap: () => selected = const LanguageOption(
+        code: '__clear__',
+        displayName: 'Clear Translation',
+        displayNameZh: '清空翻译',
+        flag: '',
+      ),
+      danger: true,
+    ),
+  ];
+  await showDesktopContextMenuAt(
+    context,
+    globalPosition: DesktopMenuAnchor.positionOrCenter(context),
+    items: items,
+  );
+  return selected;
+}
+
+class _LanguageSelectSheet extends StatefulWidget {
+  const _LanguageSelectSheet();
+
+  @override
+  State<_LanguageSelectSheet> createState() => _LanguageSelectSheetState();
+}
+
+class _LanguageSelectSheetState extends State<_LanguageSelectSheet> {
+  // Auto height with a max constraint; no draggable sheet.
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+
+    final maxHeight = MediaQuery.of(context).size.height * 0.8;
+    return SafeArea(
+      top: false,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header with drag indicator (reduced spacing)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 6),
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                // No title per iOS style; keep content close to handle
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...supportedLanguages.map(
+                        (lang) => _languageOption(context, lang),
+                      ),
+                      const SizedBox(height: 8),
+                      // Clear translation row (iOS style)
+                      SizedBox(
+                        height: 48,
+                        child: IosCardPress(
+                          borderRadius: BorderRadius.circular(14),
+                          baseColor: sheetTileColor(context),
+                          duration: const Duration(milliseconds: 260),
+                          onTap: () {
+                            Haptics.light();
+                            Navigator.of(context).pop(
+                              const LanguageOption(
+                                code: '__clear__',
+                                displayName: 'Clear Translation',
+                                displayNameZh: '清空翻译',
+                                flag: '',
+                              ),
+                            );
+                          },
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Lucide.X,
+                                size: 20,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                l10n.languageSelectSheetClearButton,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: AppFontWeights.medium,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _languageOption(BuildContext context, LanguageOption lang) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SizedBox(
+        height: 48,
+        child: IosCardPress(
+          borderRadius: BorderRadius.circular(14),
+          baseColor: sheetTileColor(context),
+          duration: const Duration(milliseconds: 260),
+          onTap: () {
+            Haptics.light();
+            Navigator.of(context).pop(lang);
+          },
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              buildLanguageFlag(lang, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _getLanguageDisplayName(l10n, lang.code),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: AppFontWeights.medium,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getLanguageDisplayName(AppLocalizations l10n, String languageCode) {
+    return languageDisplayName(l10n, languageCode);
+  }
+}
