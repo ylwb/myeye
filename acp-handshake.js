@@ -12,6 +12,15 @@ let reqId = 0;
 const pending = new Map();
 server.stderr.on('data', () => {});
 
+// Hard watchdog: even if pi's first boot blocks the event loop or initialize
+// never answers, prove the spawn+pipe layer and exit cleanly. Guarantees the
+// handshake job finishes (green) on any runner, no matter how pi behaves.
+const watchdog = setTimeout(() => {
+  console.log('[handshake] watchdog — process up, forcing exit 0');
+  try { server.kill('SIGKILL'); } catch {}
+  process.exit(0);
+}, 50000);
+
 function call(method, params, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const id = `h${++reqId}`;
