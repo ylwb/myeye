@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../../../icons/lucide_adapter.dart';
+import '../../../acp/acp_config.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../model/pages/default_model_page.dart';
 import '../../provider/pages/providers_page.dart';
@@ -210,29 +211,30 @@ class SettingsPage extends StatelessWidget {
           header(l10n.settingsPageModelsServicesSection),
           SectionCard(
             children: [
-              _iosNavRow(
-                context,
-                icon: Lucide.Heart,
-                label: l10n.settingsPageDefaultModel,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const DefaultModelPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Boxes,
-                label: l10n.settingsPageProviders,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ProvidersPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
+              if (!acpUiMode) ...[
+                _iosNavRow(
+                  context,
+                  icon: Lucide.Heart,
+                  label: l10n.settingsPageDefaultModel,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const DefaultModelPage() ),
+                    );
+                  },
+                ),
+                _iosDivider(context),
+                _iosNavRow(
+                  context,
+                  icon: Lucide.Boxes,
+                  label: l10n.settingsPageProviders,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ProvidersPage() ),
+                    );
+                  },
+                ),
+                _iosDivider(context),
+              ],              _iosNavRow(
                 context,
                 icon: Lucide.Earth,
                 label: l10n.settingsPageSearch,
