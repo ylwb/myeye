@@ -8,6 +8,8 @@ on:
 jobs:
   handshake:
     runs-on: ubuntu-latest
+    env:
+      PI_OFFLINE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,6 +27,8 @@ jobs:
     # The test script skips itself when MODEL_API_KEY is absent, so the
     # public repo CI stays green without a key.
     runs-on: ubuntu-latest
+    env:
+      PI_OFFLINE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
