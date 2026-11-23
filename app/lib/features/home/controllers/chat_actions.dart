@@ -35,6 +35,7 @@ import '../../../core/models/conversation.dart';
 import '../../../core/providers/assistant_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/models/reasoning_request.dart';
+import '../../../acp/acp_session.dart';
 import '../../../core/services/api/chat_api_service.dart';
 import '../../../core/services/api/providers/openai/responses_history.dart';
 import '../../../core/services/api/providers/claude/claude_history.dart';
@@ -334,6 +335,10 @@ class ChatActions {
   final stream_ctrl.StreamController streamController;
   final GenerationController generationController;
   final MessageGenerationService messageGenerationService;
+
+  /// Injected ACP bridge. When non-null, sends run through the ACP agent
+  /// instead of the provider API; when null, the legacy provider path runs.
+  AcpSessionManager? acpManager;
   final BuildContext contextProvider;
   final ContextUsageService? contextUsage;
   final _historyContexts = <String, RequestHistoryContext>{};
@@ -2916,6 +2921,10 @@ class ChatActions {
         historyContext?.dispose();
         return;
       }
+      if (acpManager != null) {
+        await _runAcpGeneration(state, ctx);
+        return;
+      }
       final stream = ChatApiService.sendMessageStream(
         historyContext: historyContext,
         imageContext: ctx.imageContext,
@@ -2968,6 +2977,36 @@ class ChatActions {
     } catch (e) {
       await _handleStreamError(e, state);
     }
+  }
+
+  /// ACP-backed generation: send the user prompt and feed ACP events into the
+  /// existing stream pipeline via [AcpChunkConverter]. No provider API call.
+  Future<void> _runAcpGeneration(
+    stream_ctrl.StreamingState state,
+    stream_ctrl.GenerationContext ctx,
+  ) async {
+    final manager = acpManager;
+    if (manager == null) return;
+    await manager.ensureSession(cwd: ctx.assistantMessage.conversationId);
+    final text = _lastUserText(ctx.apiMessages);
+    manager.onEvent = (event) {
+      for (final chunk in manager.converter.convert(event)) {
+        unawaited(_handleStreamChunk(chunk, state));
+      }
+    };
+    await manager.prompt(text);
+  }
+
+  /// Last user text block in API-message form (role/content maps).
+  String _lastUserText(List<Map<String, dynamic>> apiMessages) {
+    for (var i = apiMessages.length - 1; i >= 0; i--) {
+      final message = apiMessages[i];
+      if (message['role'] == 'user') {
+        final content = message['content'];
+        if (content is String) return content;
+      }
+    }
+    return '';
   }
 
   // ============================================================================
