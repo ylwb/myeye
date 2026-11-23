@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/models/chat_input_data.dart';
+import '../../../acp/acp_session.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/models/reasoning_request.dart';
 import '../../../core/models/chat_message.dart';
@@ -120,6 +121,7 @@ class HomeViewModel extends ChangeNotifier {
     required this._contextProvider,
     required this.getTitleForLocale,
     ContextUsageService? contextUsage,
+    AcpSessionManager? acpManager,
   }) : _contextUsage = contextUsage {
     // Initialize ChatActions
     _chatActions = ChatActions(
@@ -131,6 +133,7 @@ class HomeViewModel extends ChangeNotifier {
       contextProvider: _contextProvider,
       viewModel: this,
       contextUsage: contextUsage,
+      acpManager: acpManager,
     );
 
     // Wire up callbacks

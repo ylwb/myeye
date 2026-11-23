@@ -222,6 +222,7 @@ class ChatActions {
     required this.contextProvider,
     required this.viewModel,
     this.contextUsage,
+    this.acpManager,
     MobileBackgroundCoordinator? backgroundCoordinator,
   }) : _background =
            backgroundCoordinator ?? MobileBackgroundCoordinator.instance {
