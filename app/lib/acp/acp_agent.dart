@@ -8,7 +8,7 @@ library;
 
 import 'dart:convert';
 
-import 'core/models/message_part.dart';
+import '../core/models/message_part.dart';
 import 'acp_client.dart';
 
 /// One increment of assistant content produced by the ACP stream.

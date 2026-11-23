@@ -5,8 +5,8 @@
 /// Stateful: tracks text start/end and tool call ids across the stream.
 library;
 
-import 'core/models/token_usage.dart';
-import 'core/services/api/stream/stream_chunk.dart';
+import '../core/models/token_usage.dart';
+import '../core/services/api/stream/stream_chunk.dart';
 import 'acp_client.dart';
 
 /// Maps a stream of [AcpEvent]s to [StreamChunk]s.
