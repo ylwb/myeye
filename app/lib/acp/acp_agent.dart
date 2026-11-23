@@ -35,17 +35,16 @@ final class AcpDeltaTurnEnd extends AcpDelta {
 
 /// Turn an [AcpEvent] stream into `MessagePart` deltas.
 class AcpAgent {
-  AcpAgent({
-    required AcpClient client,
+  AcpAgent(
+    this._client, {
     required this.onDelta,
     this.onUsage,
     this.onPermission,
     this.onSessionInfo,
     this.onCommands,
     this.onCancelled,
-  }) : _client = client {
+  }) {
     // Re-route the client's raw event sink through this bridge.
-    // (AcpClient.onEvent is final; we subscribe via a wrapper.)
   }
 
   final AcpClient _client;
