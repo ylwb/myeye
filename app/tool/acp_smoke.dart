@@ -14,7 +14,12 @@ import '../lib/acp/acp_client.dart';
 import '../lib/acp/acp_session.dart';
 
 Future<void> main() async {
-  final withPrompt = Platform.environment['MODEL_API_KEY'] != null;
+  // pi keeps its provider credentials in ~/.pi/agent/auth.json, so a prompt
+  // round-trip is possible whenever that file (or an explicit key) is present.
+  final home = Platform.environment['HOME'] ?? '/root';
+  final authFile = File('$home/.pi/agent/auth.json');
+  final withPrompt =
+      authFile.existsSync() || Platform.environment['MODEL_API_KEY'] != null;
   final manager = AcpSessionManager();
   final turnDone = Completer<void>();
   var textReceived = false;
