@@ -83,10 +83,17 @@ jobs:
         working-directory: ${{ steps.detect.outputs.dir }}
         run: flutter pub get
 
-      - name: Build APK (release)
+      - name: Build APK (release, unsigned)
         if: steps.detect.outputs.dir != 'SKIP'
         working-directory: ${{ steps.detect.outputs.dir }}
         run: flutter build apk --release
+
+      # A debug-keystore-signed APK: GHA has no release keystore, and a
+      # release-only build comes out unsigned (Android refuses to install it).
+      - name: Build APK (debug-signed, installable)
+        if: steps.detect.outputs.dir != 'SKIP'
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: flutter build apk --debug
 
       - name: Upload APK
         if: steps.detect.outputs.dir != 'SKIP'
