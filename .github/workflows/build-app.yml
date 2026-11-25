@@ -83,22 +83,15 @@ jobs:
         working-directory: ${{ steps.detect.outputs.dir }}
         run: flutter pub get
 
-      - name: Build APK (release, unsigned)
+      - name: Build APK (debug-signed, installable, arm64)
         if: steps.detect.outputs.dir != 'SKIP'
         working-directory: ${{ steps.detect.outputs.dir }}
-        run: flutter build apk --release
-
-      # A debug-keystore-signed APK: GHA has no release keystore, and a
-      # release-only build comes out unsigned (Android refuses to install it).
-      - name: Build APK (debug-signed, installable)
-        if: steps.detect.outputs.dir != 'SKIP'
-        working-directory: ${{ steps.detect.outputs.dir }}
-        run: flutter build apk --debug
+        run: flutter build apk --debug --target-platform android-arm64
 
       - name: Upload APK
         if: steps.detect.outputs.dir != 'SKIP'
         uses: actions/upload-artifact@v4
         with:
           name: kelivo-apk
-          path: ${{ steps.detect.outputs.dir }}/build/app/outputs/flutter-apk/*.apk
+          path: ${{ steps.detect.outputs.dir }}/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
