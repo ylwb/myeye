@@ -66,7 +66,10 @@ class AcpSpawnConfig {
       args.sublist(1),
       mode: ProcessStartMode.normal,
       runInShell: false,
-      env: env,
+      // Merge into the inherited environment — passing a bare map would
+      // replace PATH/HOME and break the agent launch.
+      environment:
+          env == null ? null : <String, String>{...Platform.environment, ...env},
     );
   }
 }
