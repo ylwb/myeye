@@ -15,10 +15,10 @@ echo "==> installing debootstrap + qemu binfmt"
 sudo apt-get update -y
 sudo apt-get install -y debootstrap qemu-user-binfmt binfmt-support
 
-echo "==> debootstrap (foreign, $ARCH)"
+echo "==> debootstrap (foreign, $ARCH, trixie for node 22+)"
 sudo rm -rf "$ROOTFS"
 sudo debootstrap --foreign --arch=$ARCH --variant=minbase \
-  stable "$ROOTFS" http://deb.debian.org/debian
+  trixie "$ROOTFS" http://deb.debian.org/debian
 
 echo "==> second stage (binfmt auto-runs qemu for arm64)"
 sudo chroot "$ROOTFS" /debootstrap/debootstrap --second-stage
