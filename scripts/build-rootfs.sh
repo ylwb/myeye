@@ -9,6 +9,7 @@ set -euo pipefail
 ROOTFS=build/rootfs
 OUT=build/rootfs.tar.gz
 ARCH=arm64
+mkdir -p build
 
 echo "==> installing debootstrap + qemu binfmt"
 sudo apt-get update -y
