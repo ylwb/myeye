@@ -31,6 +31,8 @@ jobs:
 
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       # GHA public IPs frequently get 429 from Maven Central; retry tentatives.
       GRADLE_OPTS: >-
@@ -100,6 +102,8 @@ jobs:
       # asset so it can be fetched from a phone browser reliably.
       - name: Publish APK to GitHub Release
         if: steps.detect.outputs.dir != 'SKIP'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release create \
             "kelivo-apk-$(date +%Y%m%d%H%M%S)" \
