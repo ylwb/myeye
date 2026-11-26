@@ -10,17 +10,16 @@ ROOTFS=build/rootfs
 OUT=build/rootfs.tar.gz
 ARCH=arm64
 
-echo "==> installing debootstrap + qemu"
+echo "==> installing debootstrap + qemu binfmt"
 sudo apt-get update -y
-sudo apt-get install -y debootstrap qemu-user-static binfmt-support
+sudo apt-get install -y debootstrap qemu-user-binfmt binfmt-support
 
 echo "==> debootstrap (foreign, $ARCH)"
 sudo rm -rf "$ROOTFS"
 sudo debootstrap --foreign --arch=$ARCH --variant=minbase \
   stable "$ROOTFS" http://deb.debian.org/debian
 
-echo "==> copy qemu + second stage"
-sudo cp "$(command -v qemu-aarch64-static)" "$ROOTFS/usr/bin/"
+echo "==> second stage (binfmt auto-runs qemu for arm64)"
 sudo chroot "$ROOTFS" /debootstrap/debootstrap --second-stage
 
 echo "==> install node + npm"
