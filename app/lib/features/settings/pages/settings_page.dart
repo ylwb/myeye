@@ -211,6 +211,19 @@ class SettingsPage extends StatelessWidget {
           header(l10n.settingsPageModelsServicesSection),
           SectionCard(
             children: [
+              // Runtime ACP toggle — no rebuild needed.
+              StatefulBuilder(
+                builder: (context, setState) => SwitchListTile(
+                  dense: true,
+                  title: const Text('启用 ACP Agent'),
+                  subtitle: const Text('经 PRoot 沙箱运行 pi（需 agent 就绪）'),
+                  value: acpEnabled,
+                  onChanged: (v) => setState(() {
+                    acpEnabled = v;
+                  }),
+                ),
+              ),
+              _iosDivider(context),
               if (!acpUiMode) ...[
                 _iosNavRow(
                   context,

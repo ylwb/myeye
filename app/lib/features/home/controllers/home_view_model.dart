@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/models/chat_input_data.dart';
+import '../../../acp/acp_config.dart';
 import '../../../acp/acp_session.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/models/reasoning_request.dart';
@@ -133,7 +134,7 @@ class HomeViewModel extends ChangeNotifier {
       contextProvider: _contextProvider,
       viewModel: this,
       contextUsage: contextUsage,
-      acpManager: acpManager,
+      acpManager: acpManager ?? (acpEnabled ? AcpSessionManager() : null),
     );
 
     // Wire up callbacks
