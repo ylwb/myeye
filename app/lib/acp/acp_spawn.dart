@@ -17,6 +17,7 @@ class AcpSpawnConfig {
     this.useProot = false,
     this.rootfs,
     this.workspaceDir = '/workspace',
+    this.env,
   });
 
   /// The ACP server command inside the sandbox, e.g. `['pi-acp']`.
@@ -30,6 +31,9 @@ class AcpSpawnConfig {
 
   /// Working directory inside the sandbox (the bound workspace).
   final String workspaceDir;
+
+  /// Extra environment variables for the agent process (e.g. provider keys).
+  final Map<String, String>? env;
 
   /// Build the full argv for [Process.start].
   List<String> buildArgs() {
@@ -62,6 +66,7 @@ class AcpSpawnConfig {
       args.sublist(1),
       mode: ProcessStartMode.normal,
       runInShell: false,
+      env: env,
     );
   }
 }

@@ -16,7 +16,12 @@ class AcpSessionManager {
     this.useProot = false,
     this.rootfs,
     this.workspaceDir = '/workspace',
+    this.apiKey = '',
   });
+
+  /// Provider API key injected lazily before a prompt. Kept in memory only
+  /// (runtime); passed to the agent via env so it never lands in a file.
+  String apiKey;
 
   final List<String> agentCommand;
   final bool useProot;
@@ -39,6 +44,7 @@ class AcpSessionManager {
       useProot: useProot,
       rootfs: rootfs,
       workspaceDir: workspaceDir,
+      env: apiKey.isEmpty ? null : {'OPENAI_API_KEY': apiKey},
     );
     final args = config.buildArgs();
     final acp = AcpClient(onEvent: (e) => onEvent?.call(e));

@@ -123,6 +123,7 @@ class SettingsProvider extends ChangeNotifier {
       _builtInProviderKeys.contains(key);
 
   static const String _themeModeKey = 'theme_mode_v1';
+  static const String _acpApiKeyKey = 'acp_api_key_v1';
   static const String _providerConfigsKey = 'provider_configs_v1';
   static const String _pinnedModelsKey = 'pinned_models_v1';
   static const String _selectedModelKey = 'selected_model_v1';
@@ -755,6 +756,7 @@ class SettingsProvider extends ChangeNotifier {
         _themeMode = ThemeMode.system;
     }
     _themePaletteId = prefs.getString(_themePaletteKey) ?? 'default';
+    _acpApiKey = prefs.getString(_acpApiKeyKey) ?? '';
     _useDynamicColor = prefs.getBool(_useDynamicColorKey) ?? true;
     _loadCustomThemes(prefs);
     final cfgStr = prefs.getString(_providerConfigsKey);
@@ -1641,6 +1643,14 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = _preferences;
     await prefs.setBool(_globalProxyEnabledKey, _globalProxyEnabled);
+  }
+
+  String _acpApiKey = '';
+  String get acpApiKey => _acpApiKey;
+
+  Future<void> setAcpApiKey(String v) async {
+    _acpApiKey = v;
+    await _preferences.setString(_acpApiKeyKey, v);
   }
 
   Future<void> setGlobalProxyType(String v) async {

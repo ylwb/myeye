@@ -2988,6 +2988,8 @@ class ChatActions {
   ) async {
     final manager = acpManager;
     if (manager == null) return;
+    // Lazily inject the UI-configured key before the session opens.
+    manager.apiKey = contextProvider.read<SettingsProvider>().acpApiKey;
     // TODO(kelivo-acp): resolve the workspace directory from the assistant's
     // defaultWorkspaceId / WorkspaceBinding instead of the process cwd.
     await manager.ensureSession();
