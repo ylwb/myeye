@@ -1,0 +1,34 @@
+name: rootfs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build rootfs (arm64, node+pi+pi-acp)
+        run: bash scripts/build-rootfs.sh
+
+      - name: Upload rootfs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acp-rootfs
+          path: build/rootfs.tar.gz
+          if-no-files-found: error
+
+      - name: Publish rootfs to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create \
+            "acp-rootfs-$(date +%Y%m%d%H%M%S)" \
+            build/rootfs.tar.gz \
+            --repo ylwb/myeye \
+            --title "Kelivo ACP rootfs (arm64, node+pi+pi-acp)" \
+            --notes "Clean Linux userland for the PRoot sandbox. No secrets." \
+            --generate-notes
