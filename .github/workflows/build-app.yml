@@ -83,15 +83,15 @@ jobs:
         working-directory: ${{ steps.detect.outputs.dir }}
         run: flutter pub get
 
-      - name: Build APK (debug-signed, installable, arm64)
+      - name: Build APK (debug-signed, installable, arm64 split)
         if: steps.detect.outputs.dir != 'SKIP'
         working-directory: ${{ steps.detect.outputs.dir }}
-        run: flutter build apk --debug --target-platform android-arm64
+        run: flutter build apk --debug --target-platform android-arm64 --split-per-abi
 
       - name: Upload APK
         if: steps.detect.outputs.dir != 'SKIP'
         uses: actions/upload-artifact@v4
         with:
           name: kelivo-apk
-          path: ${{ steps.detect.outputs.dir }}/build/app/outputs/flutter-apk/app-debug.apk
+          path: ${{ steps.detect.outputs.dir }}/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
           if-no-files-found: error
