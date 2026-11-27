@@ -200,7 +200,7 @@ class AcpSandboxProvisioner {
     if (realm.isEmpty) {
       throw StateError('no auth realm in: $www');
     }
-    final uri = Uri.parse('$realm')
+    final uri = Uri.parse(realm)
         .replace(queryParameters: {
           'service': service,
           'scope': 'repository:$repo:pull',
