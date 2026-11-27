@@ -1,14 +1,17 @@
 /// Provisions the Linux rootfs inside the app so the ACP agent (pi/pi-acp)
 /// can run under PRoot.
 ///
-/// Mirrors `proot-distro install` but is self-contained:
-///   1. download a Debian arm64 rootfs tarball
-///   2. extract it (archive: GZip + Tar)
-///   3. `proot -0 -r <rootfs> ... apt-get install nodejs npm`
-///   4. `proot ... npm i -g @earendil-works/pi-coding-agent pi-acp`
+/// Mirrors `proot-distro install`, but pulls the rootfs from an OCI registry
+/// instead of a single tarball:
+///   1. anonymous bearer token from the registry's WWW-Authenticate realm
+///   2. manifest list -> the arm64 platform manifest
+///   3. stream the arm64 layer blob (tar+gzip)
+///   4. extract it (archive: GZip + Tar)
+///   5. `proot -0 -r <rootfs> ... apt-get install nodejs npm`
+///   6. `proot ... npm i -g @earendil-works/pi-coding-agent pi-acp`
 ///
 /// The host and the rootfs are both arm64, so no qemu emulation is needed —
-/// this is what makes provisioning possible on-device, unlike a CI image.
+/// provisioning happens on-device.
 library;
 
 import 'dart:async';
@@ -19,6 +22,7 @@ import 'package:archive/archive.dart';
 
 enum AcpSandboxStage {
   missing,
+  pulling,
   downloading,
   extracting,
   installing,
@@ -29,7 +33,7 @@ enum AcpSandboxStage {
 class AcpSandboxProvisioner {
   AcpSandboxProvisioner({
     required this.rootfsDir,
-    required this.rootfsUrl,
+    required this.imageRef,
     this.prootPath = 'proot',
     this.agentPackages = const [
       '@earendil-works/pi-coding-agent',
@@ -41,8 +45,8 @@ class AcpSandboxProvisioner {
   /// Where the rootfs is unpacked (app-private dir).
   final String rootfsDir;
 
-  /// Debian arm64 rootfs tarball URL.
-  final String rootfsUrl;
+  /// OCI image reference, e.g. `docker.m.daocloud.io/library/debian:trixie`.
+  final String imageRef;
 
   /// Path to the PRoot binary (bundled in APK assets, or on PATH).
   final String prootPath;
@@ -57,7 +61,7 @@ class AcpSandboxProvisioner {
 
   Future<bool> isReady() async => File(markerPath).existsSync();
 
-  /// Download + extract + install node/pi/pi-acp. Idempotent.
+  /// Pull + extract + install node/pi/pi-acp. Idempotent.
   Future<void> provision() async {
     if (await isReady()) {
       _stage = AcpSandboxStage.ready;
@@ -65,9 +69,9 @@ class AcpSandboxProvisioner {
     }
     Directory(rootfsDir).createSync(recursive: true);
     try {
-      _stage = AcpSandboxStage.downloading;
+      _stage = AcpSandboxStage.pulling;
       final tmp = File('$rootfsDir/acp-rootfs.tar.gz');
-      await _download(rootfsUrl, tmp);
+      await _pullLayer(imageRef, tmp);
 
       _stage = AcpSandboxStage.extracting;
       await _extractTarGz(tmp, rootfsDir);
@@ -90,24 +94,80 @@ class AcpSandboxProvisioner {
     }
   }
 
-  Future<void> _download(String url, File dest) async {
+  /// Resolve the arm64 layer blob and stream it to [dest].
+  Future<void> _pullLayer(String ref, File dest) async {
+    final colon = ref.indexOf(':');
+    final hostAndRepo = colon < 0 ? ref : ref.substring(0, colon);
+    final tag = colon < 0 ? 'latest' : ref.substring(colon + 1);
+    final slash = hostAndRepo.indexOf('/');
+    final host = slash < 0 ? hostAndRepo : hostAndRepo.substring(0, slash);
+    final repo = slash < 0
+        ? 'library/$hostAndRepo'
+        : hostAndRepo.substring(slash + 1);
+    final base = 'https://$host';
+    final accept =
+        'application/vnd.oci.image.index.v1+json,'
+        'application/vnd.docker.distribution.manifest.list.v2+json,'
+        'application/vnd.docker.distribution.manifest.v2+json';
+
     final client = HttpClient();
     try {
-      final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        throw StateError('rootfs download failed: HTTP ${response.statusCode}');
+      final token = await _authToken(client, base, repo);
+      final index = await _readJson(
+        client,
+        '$base/v2/$repo/manifests/$tag',
+        token: token,
+        accept: accept,
+      );
+      final manifests = index['manifests'] as List<dynamic>?;
+      final String manifestDigest;
+      final Map<String, dynamic> manifest;
+      if (manifests != null && manifests.isNotEmpty) {
+        final arm = manifests.firstWhere(
+          (m) {
+            final p = (m as Map<String, dynamic>)['platform']
+                as Map<String, dynamic>;
+            return p['architecture'] == 'arm64' && p['os'] == 'linux';
+          },
+          orElse: () => manifests.first as Map<String, dynamic>,
+        ) as Map<String, dynamic>;
+        manifestDigest = arm['digest'] as String;
+        manifest = await _readJson(
+          client,
+          '$base/v2/$repo/manifests/$manifestDigest',
+          token: token,
+          accept: accept,
+        );
+      } else {
+        manifest = index;
       }
-      final total = response.contentLength;
+      final layers = manifest['layers'] as List<dynamic>? ?? const [];
+      if (layers.isEmpty) {
+        throw StateError('image has no layers: $ref');
+      }
+      final layer = layers.first as Map<String, dynamic>;
+      final digest = layer['digest'] as String;
+      final size = layer['size'] as int? ?? -1;
+      onProgress?.call(0, 'downloading ${size ~/ 1048576}MB layer');
+
+      final res = await _open(
+        client,
+        '$base/v2/$repo/blobs/$digest',
+        token: token,
+        accept: '*/*',
+      );
+      if (res.statusCode != 200) {
+        throw StateError('layer download failed: HTTP ${res.statusCode}');
+      }
       final sink = dest.openWrite();
       var received = 0;
-      final subscription = response.listen(
+      final subscription = res.listen(
         (bytes) {
           sink.add(bytes);
           received += bytes.length;
           onProgress?.call(
-            total > 0 ? received / total : 0,
-            'downloading rootfs',
+            size > 0 ? (received / size).clamp(0.0, 1.0) : 0.5,
+            'downloading ${received ~/ 1048576}/${size ~/ 1048576}MB',
           );
         },
         onError: (Object _) => sink.close(),
@@ -121,6 +181,93 @@ class AcpSandboxProvisioner {
     }
   }
 
+  Future<String> _authToken(
+    HttpClient client,
+    String base,
+    String repo,
+  ) async {
+    final head = await _open(client, '$base/v2/', token: '');
+    if (head.statusCode == 200) {
+      await head.drain<void>().catchError((_) {});
+      return '';
+    }
+    final www = head.headers.value('www-authenticate') ?? '';
+    await head.drain<void>().catchError((_) {});
+    final realm = _bearerParam(www, 'realm');
+    final service = _bearerParam(www, 'service');
+    if (realm.isEmpty) {
+      throw StateError('no auth realm in: $www');
+    }
+    final uri = Uri.parse('$realm')
+        .replace(queryParameters: {
+          'service': service,
+          'scope': 'repository:$repo:pull',
+        });
+    final res = await _open(client, uri.toString(), token: '');
+    if (res.statusCode != 200) {
+      throw StateError('token request failed: HTTP ${res.statusCode}');
+    }
+    final body = await utf8.decodeStream(res);
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    return (json['token'] ?? json['access_token'] ?? '') as String;
+  }
+
+  String _bearerParam(String header, String key) {
+    for (final part in header.split(',')) {
+      final eq = part.indexOf('=');
+      if (eq < 0) continue;
+      if (part.substring(0, eq).trim() == key) {
+        return part.substring(eq + 1).trim().replaceAll('"', '');
+      }
+    }
+    return '';
+  }
+
+  Future<HttpClientRequest> _open(
+    HttpClient client,
+    String url, {
+    required String token,
+    required String accept,
+  }) async {
+    final req = await client.getUrl(Uri.parse(url));
+    req.headers.set('Accept', accept);
+    if (token.isNotEmpty) {
+      req.headers.set('Authorization', 'Bearer $token');
+    }
+    return req;
+  }
+
+  Future<HttpClientResponse> _openBody(
+    HttpClient client,
+    String url, {
+    required String token,
+    required String accept,
+  }) async =>
+      await (await _open(
+        client,
+        url,
+        token: token,
+        accept: accept,
+      )).close();
+
+  Future<Map<String, dynamic>> _readJson(
+    HttpClient client,
+    String url, {
+    required String token,
+    required String accept,
+  }) async {
+    final res = await _openBody(
+      client,
+      url,
+      token: token,
+      accept: accept,
+    );
+    if (res.statusCode != 200) {
+      throw StateError('GET $url failed: HTTP ${res.statusCode}');
+    }
+    return jsonDecode(await utf8.decodeStream(res)) as Map<String, dynamic>;
+  }
+
   Future<void> _extractTarGz(File src, String destDir) async {
     final bytes = await src.readAsBytes();
     final raw = GZipDecoder().decodeBytes(bytes);
@@ -130,8 +277,7 @@ class AcpSandboxProvisioner {
       final name = data['path'] as String? ?? '';
       if (name.isEmpty || name.contains('..') || name.startsWith('/')) continue;
       final path = '$destDir/$name';
-      final isSymlink = _isSymlink(data['type']);
-      if (isSymlink) {
+      if (_isSymlink(data['type'])) {
         final target = data['link'] as String? ?? '';
         Directory(path).parent.createSync(recursive: true);
         final res = Process.runSync('ln', ['-sfn', target, path]);
