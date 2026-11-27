@@ -150,12 +150,13 @@ class AcpSandboxProvisioner {
       final size = layer['size'] as int? ?? -1;
       onProgress?.call(0, 'downloading ${size ~/ 1048576}MB layer');
 
-      final res = await _open(
+      final request = await _open(
         client,
         '$base/v2/$repo/blobs/$digest',
         token: token,
         accept: '*/*',
       );
+      final res = await request.close();
       if (res.statusCode != 200) {
         throw StateError('layer download failed: HTTP ${res.statusCode}');
       }
@@ -166,7 +167,7 @@ class AcpSandboxProvisioner {
           sink.add(bytes);
           received += bytes.length;
           onProgress?.call(
-            size > 0 ? (received / size).clamp(0.0, 1.0) : 0.5,
+            size > 0 ? (received / size).clamp(0.0, 1.0).toDouble() : 0.5,
             'downloading ${received ~/ 1048576}/${size ~/ 1048576}MB',
           );
         },
@@ -186,7 +187,8 @@ class AcpSandboxProvisioner {
     String base,
     String repo,
   ) async {
-    final head = await _open(client, '$base/v2/', token: '');
+    final headReq = await _open(client, '$base/v2/', token: '');
+    final head = await headReq.close();
     if (head.statusCode == 200) {
       await head.drain<void>().catchError((_) {});
       return '';
@@ -203,7 +205,8 @@ class AcpSandboxProvisioner {
           'service': service,
           'scope': 'repository:$repo:pull',
         });
-    final res = await _open(client, uri.toString(), token: '');
+    final tokReq = await _open(client, uri.toString(), token: '');
+    final res = await tokReq.close();
     if (res.statusCode != 200) {
       throw StateError('token request failed: HTTP ${res.statusCode}');
     }
@@ -227,7 +230,7 @@ class AcpSandboxProvisioner {
     HttpClient client,
     String url, {
     required String token,
-    required String accept,
+    String accept = '*/*',
   }) async {
     final req = await client.getUrl(Uri.parse(url));
     req.headers.set('Accept', accept);
