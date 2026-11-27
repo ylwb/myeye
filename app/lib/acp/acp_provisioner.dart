@@ -101,20 +101,19 @@ class AcpSandboxProvisioner {
       final total = response.contentLength;
       final sink = dest.openWrite();
       var received = 0;
-      await response
-          .listen(
-            (bytes) {
-              sink.add(bytes);
-              received += bytes.length;
-              onProgress?.call(
-                total > 0 ? received / total : 0,
-                'downloading rootfs',
-              );
-            },
-            onError: (Object _) => sink.close(),
-            cancelOnError: false,
-          )
-          .await();
+      final subscription = response.listen(
+        (bytes) {
+          sink.add(bytes);
+          received += bytes.length;
+          onProgress?.call(
+            total > 0 ? received / total : 0,
+            'downloading rootfs',
+          );
+        },
+        onError: (Object _) => sink.close(),
+        cancelOnError: false,
+      );
+      await subscription.asFuture<void>().catchError((_) {});
       await sink.flush();
       await sink.close();
     } finally {
