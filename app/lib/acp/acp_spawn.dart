@@ -17,6 +17,7 @@ class AcpSpawnConfig {
     this.useProot = false,
     this.rootfs,
     this.workspaceDir = '/workspace',
+    this.prootPath = 'proot',
     this.env,
   });
 
@@ -32,6 +33,9 @@ class AcpSpawnConfig {
   /// Working directory inside the sandbox (the bound workspace).
   final String workspaceDir;
 
+  /// Path to the PRoot binary (bundled assets path, or on PATH).
+  final String prootPath;
+
   /// Extra environment variables for the agent process (e.g. provider keys).
   final Map<String, String>? env;
 
@@ -41,7 +45,7 @@ class AcpSpawnConfig {
       final inner =
           'export PATH=/usr/local/bin:/usr/bin:/bin; exec ${agentCommand.join(' ')}';
       return [
-        'proot',
+        prootPath,
         '-0',
         '-r', rootfs!,
         '-b', '/proc',
@@ -56,7 +60,7 @@ class AcpSpawnConfig {
     return agentCommand;
   }
 
-  String get command => useProot && rootfs != null ? 'proot' : agentCommand.first;
+  String get command => useProot && rootfs != null ? prootPath : agentCommand.first;
 
   /// Spawn the agent process.
   Future<Process> start() {

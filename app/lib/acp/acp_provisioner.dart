@@ -35,6 +35,7 @@ class AcpSandboxProvisioner {
     required this.rootfsDir,
     required this.imageRef,
     this.prootPath = 'proot',
+    this.libDir,
     this.agentPackages = const [
       '@earendil-works/pi-coding-agent',
       'pi-acp',
@@ -50,6 +51,9 @@ class AcpSandboxProvisioner {
 
   /// Path to the PRoot binary (bundled in APK assets, or on PATH).
   final String prootPath;
+
+  /// Directory holding libtalloc.so.2 (bundled alongside proot).
+  final String? libDir;
 
   final List<String> agentPackages;
   final void Function(double progress, String message)? onProgress;
@@ -319,7 +323,16 @@ class AcpSandboxProvisioner {
       '/bin/sh',
       '-c', shellCommand,
     ];
-    final proc = await Process.start(prootPath, args);
+    final proc = await Process.start(
+      prootPath,
+      args,
+      environment: libDir == null
+          ? null
+          : <String, String>{
+              ...Platform.environment,
+              'LD_LIBRARY_PATH': libDir!,
+            },
+    );
     final lines = proc.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter());

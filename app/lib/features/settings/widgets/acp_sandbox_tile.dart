@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../acp/acp_config.dart';
+import '../../../acp/acp_proot_bundler.dart';
 import '../../../acp/acp_provisioner.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../utils/app_directories.dart';
@@ -31,9 +32,12 @@ class _AcpSandboxTileState extends State<AcpSandboxTile> {
     });
     try {
       final dir = await AppDirectories.getAppDataDirectory();
+      final paths = await AcpProotBundler.ensureExtracted();
       final provisioner = AcpSandboxProvisioner(
         rootfsDir: '${dir.path}/acp-rootfs',
         imageRef: _imageRef,
+        prootPath: paths.prootPath,
+        libDir: paths.libDir,
         onProgress: (p, m) {
           if (!mounted) return;
           setState(() {

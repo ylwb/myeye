@@ -23,6 +23,13 @@ class AcpSessionManager {
   /// (runtime); passed to the agent via env so it never lands in a file.
   String apiKey;
 
+  /// Runtime sandbox: set by the caller once provisioning is ready. When
+  /// non-null it overrides the constructor's [useProot]/[rootfs] and the
+  /// agent runs inside the PRoot rootfs.
+  String? sandboxDir;
+  String prootPath = 'proot';
+  String? libDir;
+
   final List<String> agentCommand;
   final bool useProot;
   final String? rootfs;
@@ -39,12 +46,18 @@ class AcpSessionManager {
   /// Spawn the agent, initialize, and open a session (idempotent).
   Future<void> ensureSession({String? cwd}) async {
     if (_started && client?.isRunning == true) return;
+    final effRootfs = sandboxDir ?? rootfs;
+    final env = <String, String>{
+      if (apiKey.isNotEmpty) 'OPENAI_API_KEY': apiKey,
+      if (libDir != null) 'LD_LIBRARY_PATH': libDir!,
+    };
     final config = AcpSpawnConfig(
       agentCommand: agentCommand,
-      useProot: useProot,
-      rootfs: rootfs,
+      useProot: useProot || sandboxDir != null,
+      rootfs: effRootfs,
       workspaceDir: workspaceDir,
-      env: apiKey.isEmpty ? null : {'OPENAI_API_KEY': apiKey},
+      prootPath: prootPath,
+      env: env.isEmpty ? null : env,
     );
     final args = config.buildArgs();
     final acp = AcpClient(onEvent: (e) => onEvent?.call(e));
