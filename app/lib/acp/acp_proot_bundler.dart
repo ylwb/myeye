@@ -26,7 +26,7 @@ class AcpProotBundler {
     if (!proot.existsSync()) {
       final data = await rootBundle.load('assets/acp/proot');
       proot.writeAsBytesSync(data.buffer.asUint8List());
-      proot.chmodSync(0o755);
+      Process.runSync('chmod', ['755', proot.path]);
     }
     if (!libtalloc.existsSync()) {
       final data = await rootBundle.load('assets/acp/libtalloc.so.2');
