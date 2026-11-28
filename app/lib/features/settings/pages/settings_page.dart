@@ -6,6 +6,7 @@ import '../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../acp/acp_config.dart';
+import '../widgets/acp_sandbox_tile.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../model/pages/default_model_page.dart';
 import '../../provider/pages/providers_page.dart';
@@ -211,37 +212,8 @@ class SettingsPage extends StatelessWidget {
           header(l10n.settingsPageModelsServicesSection),
           SectionCard(
             children: [
-              // Runtime ACP toggle — no rebuild needed.
-              StatefulBuilder(
-                builder: (context, setState) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SwitchListTile(
-                      dense: true,
-                      title: const Text('启用 ACP Agent'),
-                      subtitle: const Text('经 PRoot 沙箱运行 pi（需 agent 就绪）'),
-                      value: acpEnabled,
-                      onChanged: (v) => setState(() {
-                        acpEnabled = v;
-                      }),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: TextFormField(
-                        initialValue: settings.acpApiKey,
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Agent API Key',
-                          hintText: 'pi provider key',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        onChanged: (v) => settings.setAcpApiKey(v),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Runtime ACP toggle + key + sandbox provisioning.
+              const AcpSandboxTile(),
               _iosDivider(context),
               if (!acpUiMode) ...[
                 _iosNavRow(
